@@ -1,0 +1,13 @@
+\bCVS\b
+\.DS_Store$
+~$
+^#
+^pm_to_blib$
+^blib
+^blibdirs$
+^Makefile$
+^CVS$
+\.(old|bak|cvsignore)$
+^\.podge$
+^t/sandbox/.+\.yaml
+^IO-YAML-

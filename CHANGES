@@ -1,0 +1,13 @@
+---
+
+# Change log for Perl module IO-YAML
+
+# This file is in YAML format; see <URL:http://www.yaml.org/>
+# for more information
+
+- date: 2004-12-07
+  changes: Tidied up for release
+
+- date: 2004-11-17
+  note: Initial implementation
+

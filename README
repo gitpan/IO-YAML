@@ -1,0 +1,13 @@
+About IO::YAML
+--------------
+
+This Perl module lets you incrementally read and write YAML streams.
+
+To install, do the usual:
+
+    perl Makefile.PL
+    make
+    make test
+    [sudo] make install
+
+For more information, see the module documentation.
