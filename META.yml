@@ -1,15 +1,15 @@
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         IO-YAML
-version:      0.02
+version:      0.03
 version_from: lib/IO/YAML.pm
 installdirs:  site
 requires:
-    Errno:                         0
     IO::File:                      0
     YAML:                          0
+    Symbol:                        0
+    Errno:                         0
     Fcntl:                         0
     File::Copy:                    0
-    Symbol:                        0
 
 distribution_type: module
 generated_by: ExtUtils::MakeMaker version 6.12

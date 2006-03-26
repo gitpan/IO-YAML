@@ -5,9 +5,23 @@
 # This file is in YAML format; see <URL:http://www.yaml.org/>
 # for more information
 
+- date: 2006-03-26
+  version: 0.03
+  changes:
+    - Cleaned up for CPAN release
+
+- date: 2005-05-11
+  changes:
+    - Set EOF flag upon encountering `...'
+    - Fixed handling of IO::YAML->new($glob)
+    - Added ability to read/write data past end of YAML stream using $io->handle
+
 - date: 2004-12-07
-  changes: Tidied up for release
+  version: 0.02
+  changes:
+    - Tidied up for release
 
 - date: 2004-11-17
+  version: 0.01
   note: Initial implementation
 

@@ -3,27 +3,42 @@ package IO::YAML;
 use YAML qw();
 use IO::File;
 use Errno;
-use Fcntl;
+use Fcntl qw(:seek);
 use Symbol;
 
 use vars qw($VERSION $AUTOLOAD);
 
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 sub new {
     my ($cls, @args) = @_;
+    my %args;
+    if (UNIVERSAL::isa($args[0], 'GLOB')) {
+        # IO::YAML->new($fh)
+        # IO::YAML->new($fh, $mode, %opt_args)
+        # IO::YAML->new($fh, %args)
+        $args{'handle'} = shift @args;
+        $args{'mode'}   = shift @args
+            if scalar(@args) % 2
+            && $args[0] =~ /^\+?[<>rwa]|>>|\d+$/;
+    } elsif (scalar(@args) >= 2
+            && $args[1] =~ /^\+?[<>rwa]|>>|\d+$/
+            && $args[0] ne 'mode') {
+        # IO::YAML->new($path, $mode)
+        # IO::YAML->new($path, $mode, %args)
+        $args{'mode'} = splice(@args, 1, 1);
+    }
     if (scalar(@args) % 2) {
         # --- Odd number of args
-        my $r = ref($args[0]);
-        if ($r eq '') {
+        if (ref($args[0]) eq ''
+                or UNIVERSAL::can($args[0], 'stringify')) {
             unshift @args, 'path';
-        } elsif (UNIVERSAL::isa($r, 'GLOB')) {
-            unshift @args, 'handle';
         } else {
             die "Odd argument can't be interpreted";
         }
     }
-    my %args = (
+    %args = (
+        %args,
         'auto_load' => 0,
         @args,
         'buffer'    => '',
@@ -42,6 +57,21 @@ sub auto_load { scalar @_ > 1 ? *{$_[0]}->{'auto_load'} = $_[1] : *{$_[0]}->{'au
 sub auto_close { scalar @_ > 1 ? *{$_[0]}->{'auto_close'} = $_[1] : *{$_[0]}->{'auto_close'} }
 sub buffer { scalar @_ > 1 ? *{$_[0]}->{'buffer'} = $_[1] : *{$_[0]}->{'buffer'} }
 sub handle { scalar @_ > 1 ? *{$_[0]}->{'handle'} = $_[1] : *{$_[0]}->{'handle'} }
+
+sub terminated { scalar @_ > 1 ? *{$_[0]}->{'terminated'} = $_[1] : *{$_[0]}->{'terminated'} }
+
+sub terminate {
+    my ($self) = @_;
+    my $fh = $self->handle;
+    die "Can't terminate a stream that hasn't been opened"
+        unless defined $fh;
+    my $mode = $self->mode;
+    die "Can't terminate a stream opened for read-only access"
+        if $mode =~ /^[r<]$/;
+    print $fh "...\n" or die "Couldn't terminate stream: $!";
+    $self->terminated(1);
+    return $fh;
+}
 
 sub open {
     my ($self, $path, $mode) = @_;
@@ -77,13 +107,10 @@ sub open {
         $self->path($path);
         $self->mode($mode);
         
-        die "Invalid file mode '$mode'; valid modes are < > >> r w a"
-            unless $mode =~ /^<|>|>>$/;
-        
         unless ($fh->open($path, $mode)) {
             $self->handle(undef);
-            unlink $path
-                if -e $path and $mode eq '>';
+            #unlink $path
+            #    if -e $path and $mode eq '>';
             return;
         }
         
@@ -119,7 +146,7 @@ sub print {
 
 sub getline {
     my ($self) = @_;
-    my $fh = $self->handle || $self->open;
+    my $fh = $self->handle || $self->open || die "Can't open: $!";
     my $buffer = $self->buffer;
     $buffer = <$fh> if $buffer eq '';
     my $lookahead = <$fh>;
@@ -131,13 +158,28 @@ sub getline {
         }
     }
     my $retval = $self->auto_load ? YAML::Load($buffer) : $buffer;
+    if (defined $lookahead) {
+        if ($lookahead =~ /^\.\.\.$/) {
+            $self->terminated(1);
+            $buffer = '';
+        } else {
+            $buffer = $lookahead;
+        }
+    } else {
+        $buffer = '';
+    }
+    $self->buffer($buffer);
+    
+    $lookahead = ''
+        if !defined($lookahead)
+        or $lookahead =~ /^\.\.\.$/;
     $self->buffer(defined $lookahead ? $lookahead : '');
     return $retval;
 }
 
 sub getlines {
     my ($self) = @_;
-    my $fh = $self->handle || $self->open;
+    my $fh = $self->handle || $self->open || die "Can't open: $!";
     my @lines = <$fh>;
     return YAML::Load(join('', @lines));
 }
@@ -149,18 +191,42 @@ sub next {
 
 sub seek {
     my ($self, $pos, $whence) = @_;
-    die "Arbitrary seeks not allowed"
-        unless $pos == 0;
-    my $fh = $self->handle || $self->open;
-    fh_seek($fh, $pos, $whence)
+    my $fh = $self->handle || $self->open || die "Can't open: $!";
+    my $result = fh_seek($fh, $pos, $whence)
         or die "Couldn't seek: $!";
+    my $old_pos = fh_tell($fh);
+    my $buffer;
+    if ($pos) {
+        # Arbitrary seek -- make sure we're at the beginning of a YAML document
+        $result = fh_seek($fh, $pos, $whence)
+            or die "Couldn't seek: $!";
+        $buffer = <$fh>;
+        if (!defined($buffer)) {
+            # We're at the end of the stream -- that's fine, just
+            #   set the buffer to the empty string
+            $buffer = '';
+        } elsif ($buffer !~ /^---(?=\s)/) {
+            # Oops!  We were expecting the '---' (etc.) line that
+            #   begins a YAML document, but we found something else.
+            # Try to put things back the way they were, then die.
+            fh_seek($fh, $old_pos, SEEK_SET);
+            die "Seek not allowed except to start of YAML document";
+        }
+    } else {
+        # Clear the buffer
+        $buffer = '';
+    }
+    # Set the buffer (either empty or the '---' (etc.) line just read
+    $self->buffer($buffer);
+    return $result;
 }
 
 sub tell {
     my ($self) = @_;
-    my $fh = $self->handle || $self->open;
+    my $fh = $self->handle || $self->open || die "Can't open: $!";
     my $pos = fh_tell($fh);
-    return unless $! eq '';
+    die "Can't get file cursor position: $!"
+        unless $! eq '';
     return $pos;
 }
 
@@ -169,15 +235,16 @@ sub truncate {
     die "Arbitrary truncates not allowed"
         unless $length == 0
         or $length == $self->tell;
-    my $fh = $self->handle || $self->open;
+    my $fh = $self->handle || $self->open || die "Can't open: $!";
     fh_truncate($fh, $length);
     return $! ne '';
 }
 
 sub eof {
     my ($self) = @_;
-    my $fh = $self->handle || $self->open;
-    fh_eof($fh);
+    my $fh = $self->handle || $self->open || die "Can't open: $!";
+    return $self->terminated
+        or fh_eof($fh);
 }
 
 sub DESTROY {
@@ -203,17 +270,21 @@ sub AUTOLOAD {
 
 sub normalize_path_and_mode {
     my ($self, $path, $mode) = @_;
-    if ($path =~ s/^(<|>|>>)\s*//) {
+    if ($path =~ s/^(<|>|>>|\+<|\+>)\s*//) {
         $mode = $1;
     }
     return ($path, '<') unless defined $mode;
     my %mode_norm = qw(
         <   <
-        >   >
-        >>  >>
         r   <
+        >   >
         w   >
+        >>  >>
         a   >>
+        +<  +<
+        r+  +<
+        +>  +>
+        w+  +>
     );
     $mode = $mode_norm{$mode}
         or die "Unknown mode: '$mode'";
@@ -233,6 +304,7 @@ sub init {
         # --- Nothing to do
     }
     $self->tie; # unless $self->dont_tie;
+    $self->terminated(0);
     return $self;
 }
 
@@ -313,6 +385,7 @@ sub fh_close {
     my ($fh) = @_;
     if (UNIVERSAL::isa($fh, 'GLOB')) {
         no warnings;
+        $! = 0;
         close $fh;
     } else {
         $fh->close;
@@ -323,6 +396,7 @@ sub fh_seek {
     my ($fh, $pos, $whence) = @_;
     if (UNIVERSAL::isa($fh, 'GLOB')) {
         no warnings;
+        $! = 0;
         seek $fh, $pos, $whence;
     } else {
         $fh->seek(@_);
@@ -333,6 +407,7 @@ sub fh_tell {
     my ($fh) = @_;
     if (UNIVERSAL::isa($fh, 'GLOB')) {
         no warnings;
+        $! = 0;
         tell $fh;
     } else {
         $fh->tell;
@@ -343,6 +418,7 @@ sub fh_truncate {
     my ($fh, $length) = @_;
     if (UNIVERSAL::isa($fh, 'GLOB')) {
         no warnings;
+        $! = 0;
         truncate $fh, $length;
     } else {
         $fh->truncate($length);
@@ -353,6 +429,7 @@ sub fh_eof {
     my ($fh) = @_;
     if (UNIVERSAL::isa($fh, 'GLOB')) {
         no warnings;
+        $! = 0;
         eof $fh;
     } else {
         $fh->eof;
@@ -492,6 +569,47 @@ reference to a subroutine).
 The complication with undef values that affects the reading of a YAML stream
 is not an issue when writing to a YAML stream.
 
+=head2 Reading and writing beyond the end of the YAML stream
+
+If a YAML stream is terminated by a line consisting solely of three periods
+(C<...>), you can read beyond the terminator by doing this:
+
+    $io->auto_load(1);
+    while(not $io->eof) {
+        my $value = <$io>;
+        ...
+    }
+    $fh = $io->handle;
+    while (<$fh>) {
+        ...
+    }
+
+The C<...> line will be skipped.  Thus, to echo a YAML stream and any following
+lines, do this:
+
+    $io = IO::YAML->new(...);
+    $io->auto_load(1);
+    while (not $io->eof) {
+        $data = <$io>;
+        print YAML::Dump($data);
+    }
+    $fh = $io->handle;
+    unless ($fh->eof) {
+        print "...\n";
+        while (<$fh>) {
+            print;
+        }
+    }
+
+You can also terminate a YAML stream that you have written, and (if you wish)
+write beyond the terminator:
+
+    $io = IO::YAML->new($file_or_handle, '>');
+    print $io $_ foreach @data;
+    $fh = $io->handle;
+    print $fh "...\n";
+    print $fh $_ foreach @extra_lines;
+
 =head1 METHODS
 
 =over 4
@@ -591,6 +709,8 @@ Close the filehandle.
 
 =item B<print>
 
+    $io->print($data) or die $!;
+
 =item B<getline>
 
 =item B<getlines>
@@ -617,6 +737,8 @@ Autoflush might not be working.
 
 =head1 TO DO
 
+Normalize modes passed in the constructor.
+
 Implement numeric modes.
 
 Figure out how to allow read-write access, plus seek(), tell(), and truncate().
@@ -631,7 +753,7 @@ Paul Hoffman (nkuitse AT cpan DOT org)
 
 =head1 COPYRIGHT
 
-Copyright 2004 Paul M. Hoffman.
+Copyright 2004-2005 Paul M. Hoffman.
 
 This is free software, and is made available under the same terms as
 Perl itself.
