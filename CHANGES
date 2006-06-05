@@ -5,10 +5,23 @@
 # This file is in YAML format; see <URL:http://www.yaml.org/>
 # for more information
 
+- date: 2006-06-05
+  version: 0.04
+  changes:
+    - Fixed eof handling
+    - Added tests for reading and writing beyond end of YAML stream
+    - Fixed documentation of writing beyond end of YAML stream
+    - Document seek, tell, truncate, and eof methods
+
 - date: 2006-03-26
   version: 0.03
   changes:
     - Cleaned up for CPAN release
+    - Fixed argument handling in constructor (reported by Hakim Cassimally)
+    - Documented reading past end of YAML stream
+    - Added ability to write past end of YAML stream
+    - Allow arbitrary seeks, as long as it's to the beginning of a YAML document
+    - Allow modes +<, +>, r+, and w+
 
 - date: 2005-05-11
   changes:

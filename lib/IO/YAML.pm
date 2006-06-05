@@ -8,7 +8,7 @@ use Symbol;
 
 use vars qw($VERSION $AUTOLOAD);
 
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 sub new {
     my ($cls, @args) = @_;
@@ -244,7 +244,7 @@ sub eof {
     my ($self) = @_;
     my $fh = $self->handle || $self->open || die "Can't open: $!";
     return $self->terminated
-        or fh_eof($fh);
+        || fh_eof($fh);
 }
 
 sub DESTROY {
@@ -463,6 +463,7 @@ IO::YAML - read and write YAML streams incrementally
     $io->open($path, '>>') or die $!;  # Open a stream for appending
     
     print $io $mystring;
+    print $io @myvalues;
     print $io \@myarray;
     print $io \%myhash;
     print $io $myobj;
@@ -482,7 +483,7 @@ IO::YAML - read and write YAML streams incrementally
     
     $io = IO::YAML->new($path_or_handle);
     $io->auto_load(1);
-    my @values = <$io>;  # Equivalent to YAML::LoadFile(...)
+    my @values = <$io>;  # Roughly equivalent to YAML::LoadFile(...)
 
 =head1 DESCRIPTION
 
@@ -506,10 +507,16 @@ string 'foo', an empty array, and a hash with three elements:
     author: nkuitse
     date: 2004-03-05
     ...
-    Blah blah blah ignored ignored ignored.
+    Blah blah blah,
+    These lines aren't part
+    of the YAML stream
+    and will be ignored.
     ^D
 
 (Here, C<^D> indicates the end of the file.)
+
+Unlike the current version of L<YAML|YAML>,  L<IO::YAML|IO::YAML> properly
+recognizes the stream terminator (C<...>) and ignores the following lines.
 
 In this next example, the stream consists of a single YAML document whose value
 is C<undef>:
@@ -601,14 +608,16 @@ lines, do this:
         }
     }
 
-You can also terminate a YAML stream that you have written, and (if you wish)
-write beyond the terminator:
+You can also use the C<terminate> method to add an explicit end-of-stream marker
+("..." on a line by itself) to a YAML stream that you have open for writing (or
+appending), and (if you wish) use the underlying file handle to write beyond the
+end of stream marker:
 
     $io = IO::YAML->new($file_or_handle, '>');
-    print $io $_ foreach @data;
+    print $io @data_values;
+    $io->terminate;
     $fh = $io->handle;
-    print $fh "...\n";
-    print $fh $_ foreach @extra_lines;
+    print $fh @extra_stuff;
 
 =head1 METHODS
 
@@ -717,17 +726,34 @@ Close the filehandle.
 
 =item B<seek>
 
+    $io->seek($pos, $whence);
+
+Set the IO::YAML file handle's position I<in bytes> within the YAML stream.
+This will fail unless it moves the position to the beginning of a YAML document
+or the end of the whole file handle.
+
 =item B<tell>
+
+    $pos = $io->tell;
+
+Return the the IO::YAML file handle's position I<in bytes>.
 
 =item B<truncate>
 
-=item B<seek>
+    $io->truncate(0);
+    $io->truncate($io->tell);
 
-=item B<seek>
+Truncates the IO::YAML file to the specified length.  As illustrated here, this
+must be either 0 or equal to the filehandle's current position.
 
-=item B<seek>
+=item B<eof>
 
-=item B<seek>
+    if ($io->eof) { ... }
+
+Return 1 if the IO::YAML filehandle is at the end of the YAML stream.  This
+may or may not be the actual end of the filehandle, since a YAML stream may be
+followed by a terminator (C<...> on a line by itself) and any number of
+additional bytes.
 
 =back
 
@@ -735,13 +761,20 @@ Close the filehandle.
 
 Autoflush might not be working.
 
+Seeking to the first position beyond the end of the YAML stream should be
+possible but doesn't currently work.
+
 =head1 TO DO
 
 Normalize modes passed in the constructor.
 
 Implement numeric modes.
 
-Figure out how to allow read-write access, plus seek(), tell(), and truncate().
+Add tests for B<seek> and B<tell> methods.
+
+Enable seeking to the first byte beyond the end of the YAML stream.
+
+Figure out how to allow read-write access and truncate().
 
 =head1 SEE ALSO
 
@@ -753,7 +786,7 @@ Paul Hoffman (nkuitse AT cpan DOT org)
 
 =head1 COPYRIGHT
 
-Copyright 2004-2005 Paul M. Hoffman.
+Copyright 2004-2006 Paul M. Hoffman.
 
 This is free software, and is made available under the same terms as
 Perl itself.
