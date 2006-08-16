@@ -8,7 +8,7 @@ use Symbol;
 
 use vars qw($VERSION $AUTOLOAD);
 
-$VERSION = '0.04';
+$VERSION = '0.05';
 
 sub new {
     my ($cls, @args) = @_;
@@ -21,7 +21,8 @@ sub new {
         $args{'mode'}   = shift @args
             if scalar(@args) % 2
             && $args[0] =~ /^\+?[<>rwa]|>>|\d+$/;
-    } elsif (scalar(@args) >= 2
+    }
+    elsif (scalar(@args) >= 2
             && $args[1] =~ /^\+?[<>rwa]|>>|\d+$/
             && $args[0] ne 'mode') {
         # IO::YAML->new($path, $mode)
@@ -33,15 +34,17 @@ sub new {
         if (ref($args[0]) eq ''
                 or UNIVERSAL::can($args[0], 'stringify')) {
             unshift @args, 'path';
-        } else {
+        }
+        else {
             die "Odd argument can't be interpreted";
         }
     }
     %args = (
         %args,
         'auto_load' => 0,
+        'auto_terminate' => 0,
         @args,
-        'buffer'    => '',
+        'buffer' => '',
     );
     my $self = bless Symbol::gensym(), $cls;
     foreach (keys %args) {
@@ -53,23 +56,21 @@ sub new {
 sub path { scalar @_ > 1 ? *{$_[0]}->{'path'} = $_[1] : *{$_[0]}->{'path'} }
 sub mode { scalar @_ > 1 ? *{$_[0]}->{'mode'} = $_[1] : *{$_[0]}->{'mode'} }
 sub auto_load { scalar @_ > 1 ? *{$_[0]}->{'auto_load'} = $_[1] : *{$_[0]}->{'auto_load'} }
+sub auto_terminate { scalar @_ > 1 ? *{$_[0]}->{'auto_terminate'} = $_[1] : *{$_[0]}->{'auto_terminate'} }
 
 sub auto_close { scalar @_ > 1 ? *{$_[0]}->{'auto_close'} = $_[1] : *{$_[0]}->{'auto_close'} }
 sub buffer { scalar @_ > 1 ? *{$_[0]}->{'buffer'} = $_[1] : *{$_[0]}->{'buffer'} }
 sub handle { scalar @_ > 1 ? *{$_[0]}->{'handle'} = $_[1] : *{$_[0]}->{'handle'} }
 
-sub terminated { scalar @_ > 1 ? *{$_[0]}->{'terminated'} = $_[1] : *{$_[0]}->{'terminated'} }
-
 sub terminate {
     my ($self) = @_;
     my $fh = $self->handle;
-    die "Can't terminate a stream that hasn't been opened"
+    die "Can't terminate a document in an unopened stream"
         unless defined $fh;
     my $mode = $self->mode;
-    die "Can't terminate a stream opened for read-only access"
+    die "Can't terminate a document in a stream opened for read-only access"
         if $mode =~ /^[r<]$/;
-    print $fh "...\n" or die "Couldn't terminate stream: $!";
-    $self->terminated(1);
+    print $fh "...\n" or die "Couldn't terminate document: $!";
     return $fh;
 }
 
@@ -86,7 +87,8 @@ sub open {
     if (defined $fh) {
         # Default is to read it
         $mode = '<' unless defined $mode;
-    } else {
+    }
+    else {
         
         $path ||= $self->path;
         
@@ -94,7 +96,8 @@ sub open {
             # $! = "No such file or directory";
             if (exists &Errno::ENOENT) {
                 $! = &Errno::ENOENT;
-            } else {
+            }
+            else {
                 CORE::open(gensym, undef);
             }
             return;
@@ -139,7 +142,8 @@ sub close {
 sub print {
     my $self = shift;
     my $fh = $self->handle || $self->open || die "Can't open: $!";
-    print $fh (YAML::Dump($_)) or die $!
+    my @terminator = $self->auto_terminate ? ("...\n") : ();
+    print $fh (YAML::Dump($_), @terminator) or die $!
         foreach @_;
     return 1;
 }
@@ -160,12 +164,13 @@ sub getline {
     my $retval = $self->auto_load ? YAML::Load($buffer) : $buffer;
     if (defined $lookahead) {
         if ($lookahead =~ /^\.\.\.$/) {
-            $self->terminated(1);
             $buffer = '';
-        } else {
+        }
+        else {
             $buffer = $lookahead;
         }
-    } else {
+    }
+    else {
         $buffer = '';
     }
     $self->buffer($buffer);
@@ -193,7 +198,7 @@ sub seek {
     my ($self, $pos, $whence) = @_;
     my $fh = $self->handle || $self->open || die "Can't open: $!";
     my $result = fh_seek($fh, $pos, $whence)
-        or die "Couldn't seek: $!";
+        || die "Couldn't seek: $!";
     my $old_pos = fh_tell($fh);
     my $buffer;
     if ($pos) {
@@ -205,14 +210,16 @@ sub seek {
             # We're at the end of the stream -- that's fine, just
             #   set the buffer to the empty string
             $buffer = '';
-        } elsif ($buffer !~ /^---(?=\s)/) {
+        }
+        elsif ($buffer !~ /^---(?=\s)/) {
             # Oops!  We were expecting the '---' (etc.) line that
             #   begins a YAML document, but we found something else.
             # Try to put things back the way they were, then die.
             fh_seek($fh, $old_pos, SEEK_SET);
             die "Seek not allowed except to start of YAML document";
         }
-    } else {
+    }
+    else {
         # Clear the buffer
         $buffer = '';
     }
@@ -243,8 +250,7 @@ sub truncate {
 sub eof {
     my ($self) = @_;
     my $fh = $self->handle || $self->open || die "Can't open: $!";
-    return $self->terminated
-        || fh_eof($fh);
+    return fh_eof($fh);
 }
 
 sub DESTROY {
@@ -298,13 +304,14 @@ sub init {
     my $fh   = $self->handle;
     if ($fh) {
         # --- Nothing to do
-    } elsif (defined $path) {
+    }
+    elsif (defined $path) {
         $self->open($path, $self->mode);
-    } else {
+    }
+    else {
         # --- Nothing to do
     }
     $self->tie; # unless $self->dont_tie;
-    $self->terminated(0);
     return $self;
 }
 
@@ -343,8 +350,7 @@ sub PRINT {
 
 sub PRINTF {
     no warnings;
-    my $fh = shift()->handle;
-    print $fh sprintf(@_);
+    shift()->print(sprintf(@_));
 }
 
 sub READ {
@@ -387,7 +393,8 @@ sub fh_close {
         no warnings;
         $! = 0;
         close $fh;
-    } else {
+    }
+    else {
         $fh->close;
     }
 }
@@ -398,7 +405,8 @@ sub fh_seek {
         no warnings;
         $! = 0;
         seek $fh, $pos, $whence;
-    } else {
+    }
+    else {
         $fh->seek(@_);
     }
 }
@@ -409,7 +417,8 @@ sub fh_tell {
         no warnings;
         $! = 0;
         tell $fh;
-    } else {
+    }
+    else {
         $fh->tell;
     }
 }
@@ -420,7 +429,8 @@ sub fh_truncate {
         no warnings;
         $! = 0;
         truncate $fh, $length;
-    } else {
+    }
+    else {
         $fh->truncate($length);
     }
 }
@@ -431,7 +441,8 @@ sub fh_eof {
         no warnings;
         $! = 0;
         eof $fh;
-    } else {
+    }
+    else {
         $fh->eof;
     }
 }
@@ -462,6 +473,9 @@ IO::YAML - read and write YAML streams incrementally
     $io->open($path, '>')  or die $!;  # Open a stream for writing
     $io->open($path, '>>') or die $!;  # Open a stream for appending
     
+    # Automatically add "...\n" at end of each document written
+    $io->auto_terminate(1);
+    
     print $io $mystring;
     print $io @myvalues;
     print $io \@myarray;
@@ -490,14 +504,13 @@ IO::YAML - read and write YAML streams incrementally
 B<IO::YAML> may be used to read and write YAML streams one C<document> (i.e.,
 one value) at a time.
 
-A YAML stream is a file consisting of a sequence of YAML documents; the stream
-may optionally be followed by the end-of-stream marker (a line consisting solely
-of the three-byte sequence "..."), after which any sequence of bytes may occur
-(and will be ignored).
+A YAML stream is a file consisting of a sequence of YAML documents, each of
+which may (optionally) be terminated by a line consisting solely of three
+periods (C<...>).
 
 The first line of each document must begin with the three-byte sequence C<--->.
 
-Here's a simple example consisting of three documents; their values are the
+Here's a simple YAML file consisting of three documents; their values are the
 string 'foo', an empty array, and a hash with three elements:
 
     --- #YAML:1.0 foo
@@ -506,17 +519,9 @@ string 'foo', an empty array, and a hash with three elements:
     title: Testing 1, 2, 3
     author: nkuitse
     date: 2004-03-05
-    ...
-    Blah blah blah,
-    These lines aren't part
-    of the YAML stream
-    and will be ignored.
     ^D
 
 (Here, C<^D> indicates the end of the file.)
-
-Unlike the current version of L<YAML|YAML>,  L<IO::YAML|IO::YAML> properly
-recognizes the stream terminator (C<...>) and ignores the following lines.
 
 In this next example, the stream consists of a single YAML document whose value
 is C<undef>:
@@ -525,7 +530,7 @@ is C<undef>:
     ^D
 
 As this example shows, the first line in each document need not contain the
-full YAML 1.0 header; nor must the stream contain the end-of-stream marker.
+full YAML 1.0 header.
 
 =head2 Reading from a YAML stream
 
@@ -559,6 +564,11 @@ use C<< $io->eof >> to test for the end of the stream:
         ...
     }
 
+L<IO::YAML|IO::YAML> properly recognizes the document terminator (C<...>).
+Some versions of L<YAML|YAML> do B<not> recognize it, however; in order to
+prevent problems when reading YAML streams with auto-loading off,
+L<IO::YAML|IO::YAML> strips the document terminator line if it is present.
+
 =head2 Writing to a YAML stream
 
 To print to a YAML stream, call C<print> just as you would with a regular file
@@ -576,48 +586,65 @@ reference to a subroutine).
 The complication with undef values that affects the reading of a YAML stream
 is not an issue when writing to a YAML stream.
 
-=head2 Reading and writing beyond the end of the YAML stream
+=head2 Terminating YAML documents
 
-If a YAML stream is terminated by a line consisting solely of three periods
-(C<...>), you can read beyond the terminator by doing this:
-
-    $io->auto_load(1);
-    while(not $io->eof) {
-        my $value = <$io>;
-        ...
-    }
-    $fh = $io->handle;
-    while (<$fh>) {
-        ...
-    }
-
-The C<...> line will be skipped.  Thus, to echo a YAML stream and any following
-lines, do this:
-
-    $io = IO::YAML->new(...);
-    $io->auto_load(1);
-    while (not $io->eof) {
-        $data = <$io>;
-        print YAML::Dump($data);
-    }
-    $fh = $io->handle;
-    unless ($fh->eof) {
-        print "...\n";
-        while (<$fh>) {
-            print;
-        }
-    }
-
-You can also use the C<terminate> method to add an explicit end-of-stream marker
-("..." on a line by itself) to a YAML stream that you have open for writing (or
-appending), and (if you wish) use the underlying file handle to write beyond the
-end of stream marker:
+Documents in a YAML stream may be terminated by a line consisting solely of
+the string "...".  You can use the C<terminate> method to add an explicit
+document terminator to a YAML stream that you have open for writing (or
+appending):
 
     $io = IO::YAML->new($file_or_handle, '>');
-    print $io @data_values;
-    $io->terminate;
+    
+    foreach my $value (@data_values) {
+        print $io $value;
+        $io->terminate;
+    }
+
+It's generally safer to have YAML documents terminated automatically:
+
+    # 1. Set auto_terminate to a true value
+    #    a) When creating the object
+    $io = IO::YAML->new(
+        'handle' => $fh,
+        'mode' => '>>',
+        'auto_terminate' => 1,
+    );
+    # or b) At any point thereafter
+    $io = IO::YAML->new(...);
+    $io->auto_terminate(1);
+    
+    # 2. Documents are now auto-terminated
+    foreach my $value (@data_values) {
+        print $io $value;
+        # $io->terminate called implicitly
+    }
+
+Note that it's not the YAML I<stream> that's terminated; it's the YAML document
+that was previously written.
+
+=head2 Low-level access
+
+Sometimes it is helpful to be able to access a YAML stream at a lower level.
+For example, you may wish to read and write a file consisting of a YAML
+document (here, serving as a header of sorts) followed by arbitrary text.
+The C<handle> method may be used to obtain the underlying file handle so
+that it can be used for this low-level access:
+
+    # Read header + body
+    $io->auto_load(1);
+    $header = <$io>;
     $fh = $io->handle;
-    print $fh @extra_stuff;
+    while (<$fh>) {
+        # Process each line after the YAML document
+    }
+    
+    # Write header + body
+    $io->auto_terminate(1);
+    print $io $header;
+    $fh = $io->handle;
+    for (@other_stuff_to_write) {
+        print $fh $_;
+    }
 
 =head1 METHODS
 
@@ -690,6 +717,16 @@ documents are variable in size.
 
 B<NOTE:> Numeric modes are not yet implemented.
 
+=item I<auto_load>
+
+Indicates whether YAML document values should be auto-loaded after being
+read (see above).  The default is B<not> to auto-load values.
+
+=item I<auto_terminate>
+
+Indicates whether YAML documents should be auto-terminated when they are
+written (see above).  The default is B<not> to auto-terminate documents.
+
 =back
 
 =item B<open>
@@ -750,10 +787,7 @@ must be either 0 or equal to the filehandle's current position.
 
     if ($io->eof) { ... }
 
-Return 1 if the IO::YAML filehandle is at the end of the YAML stream.  This
-may or may not be the actual end of the filehandle, since a YAML stream may be
-followed by a terminator (C<...> on a line by itself) and any number of
-additional bytes.
+Return 1 if the IO::YAML filehandle is at the end of the YAML stream.
 
 =back
 

@@ -1,4 +1,4 @@
-use Test::More 'tests' => 5;
+use Test::More 'tests' => 8;
 
 use YAML qw();
 
@@ -19,7 +19,8 @@ $io->auto_load(1);
 
 my (@docs, @remainder);
 
-while (not $io->eof) {
+for (1..3) {
+    ok( !$io->eof, "not eof $_" );
     my $value = <$io>;
     push @docs, $value;
 }

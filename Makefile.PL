@@ -11,6 +11,7 @@ WriteMakefile(
         'Fcntl'      => 0,
         'Symbol'     => 0,
         'File::Copy' => 0,
+        'IO::Scalar' => 0,
     },
 );
 
