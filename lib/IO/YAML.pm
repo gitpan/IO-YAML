@@ -8,7 +8,7 @@ use Symbol;
 
 use vars qw($VERSION $AUTOLOAD);
 
-$VERSION = '0.05';
+$VERSION = '0.06';
 
 sub new {
     my ($cls, @args) = @_;

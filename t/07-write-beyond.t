@@ -1,4 +1,4 @@
-use Test::More 'tests' => 6;
+use Test::More 'tests' => 7;
 
 my @values = (1..3);
 my @lines    = map { "$_\n" } (4..6);
@@ -38,7 +38,12 @@ ok( $io->close, 'close' );
 
 my @contents = do { open(my $fh, $test_file) or die; <$fh> };
 
-is_deeply( \@contents, \@expected, 'written contents' );
+for (0..2) {
+
+}
+
+is_deeply( [ map { YAML::Load($_) } @contents[0..2] ], [1..3], 'written contents' );
+is_deeply( [ @contents[3..6] ], [ map { "$_\n" } qw(... 4 5 6) ], 'more contents' );
 
 # --- Clean up for later tests
 

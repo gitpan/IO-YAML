@@ -5,6 +5,19 @@
 # This file is in YAML format; see <URL:http://www.yaml.org/>
 # for more information
 
+- date: 2006-08-17
+  version: 0.06
+  changes:
+    - Make tests in t/07-write-beyond.t work under multiple versions of YAML
+
+- date: 2006-08-16
+  version: 0.05
+  changes:
+    - Handle single document terminators correctly when reading
+    - Added auto_terminate()
+    - Fixed precedence bug in seek()
+    - Rewrote documentation of handle()
+
 - date: 2006-06-05
   version: 0.04
   changes:

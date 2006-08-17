@@ -13,6 +13,7 @@ t/04-append.t
 t/05-new.t
 t/06-read-beyond.t
 t/07-write-beyond.t
+t/08-autoterm.t
 t/99-pod.t
 t/append.yaml
 t/one.yaml
