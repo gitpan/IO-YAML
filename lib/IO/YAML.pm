@@ -1,5 +1,8 @@
 package IO::YAML;
 
+use strict;
+use warnings;
+
 use YAML qw();
 use IO::File;
 use Errno;
@@ -8,7 +11,7 @@ use Symbol;
 
 use vars qw($VERSION $AUTOLOAD);
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 
 sub new {
     my ($cls, @args) = @_;
@@ -44,7 +47,7 @@ sub new {
         'auto_load' => 0,
         'auto_terminate' => 0,
         @args,
-        'buffer' => '',
+        'buffer' => [],
     );
     my $self = bless Symbol::gensym(), $cls;
     foreach (keys %args) {
@@ -152,33 +155,25 @@ sub getline {
     my ($self) = @_;
     my $fh = $self->handle || $self->open || die "Can't open: $!";
     my $buffer = $self->buffer;
-    $buffer = <$fh> if $buffer eq '';
-    my $lookahead = <$fh>;
-    if (defined $lookahead) {
-        until ($lookahead =~ /^(?:---|\.\.\.)/) {
-            $buffer .= $lookahead;
-            $lookahead = <$fh>;
-            last unless defined $lookahead;
-        }
+    my $source;
+    while (1) {
+        $source = scalar @$buffer ? shift @$buffer : <$fh>;
+        return unless defined $source;
+        last unless $source =~ /^#/;
     }
-    my $retval = $self->auto_load ? YAML::Load($buffer) : $buffer;
-    if (defined $lookahead) {
-        if ($lookahead =~ /^\.\.\.$/) {
-            $buffer = '';
+    while (defined(my $line = <$fh>)) {
+        if ($line =~ /^\.\.\.$/) {
+            # End of stream
+            last;
         }
-        else {
-            $buffer = $lookahead;
+        elsif ($line =~ /^---/) {
+            # Oops -- hit start of next document in stream
+            push @$buffer, $line;
+            last;
         }
+        $source .= $line;
     }
-    else {
-        $buffer = '';
-    }
-    $self->buffer($buffer);
-    
-    $lookahead = ''
-        if !defined($lookahead)
-        or $lookahead =~ /^\.\.\.$/;
-    $self->buffer(defined $lookahead ? $lookahead : '');
+    my $retval = $self->auto_load ? YAML::Load($source) : $source;
     return $retval;
 }
 
@@ -200,18 +195,19 @@ sub seek {
     my $result = fh_seek($fh, $pos, $whence)
         || die "Couldn't seek: $!";
     my $old_pos = fh_tell($fh);
-    my $buffer;
+    my $buffer = $self->buffer;
+    my $source;
     if ($pos) {
         # Arbitrary seek -- make sure we're at the beginning of a YAML document
         $result = fh_seek($fh, $pos, $whence)
             or die "Couldn't seek: $!";
-        $buffer = <$fh>;
-        if (!defined($buffer)) {
+        $source = <$fh>;
+        if (!defined($source)) {
             # We're at the end of the stream -- that's fine, just
             #   set the buffer to the empty string
-            $buffer = '';
+            @$buffer = ();
         }
-        elsif ($buffer !~ /^---(?=\s)/) {
+        elsif ($source !~ /^---(?=\s)/) {
             # Oops!  We were expecting the '---' (etc.) line that
             #   begins a YAML document, but we found something else.
             # Try to put things back the way they were, then die.
@@ -221,10 +217,8 @@ sub seek {
     }
     else {
         # Clear the buffer
-        $buffer = '';
+        @$buffer = ();
     }
-    # Set the buffer (either empty or the '---' (etc.) line just read
-    $self->buffer($buffer);
     return $result;
 }
 

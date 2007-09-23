@@ -5,6 +5,12 @@
 # This file is in YAML format; see <URL:http://www.yaml.org/>
 # for more information
 
+- date: 2007-09-22
+  version: 0.07
+  changes:
+    - use {strict,warnings} -- d'oh!
+    - Ignore comments at beginning/end of documents (rt.cpan.org #29483)
+
 - date: 2006-08-17
   version: 0.06
   changes:
