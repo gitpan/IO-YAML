@@ -1,7 +1,8 @@
 ---
 name: IO-YAML
-version: 0.07
-author: Paul Hoffman (nkuitse AT cpan DOT org)
+version: 0.08
+author:
+  - Paul Hoffman (nkuitse AT cpan DOT org)
 abstract: read and write YAML streams incrementally
 license: unknown
 requires:
@@ -15,5 +16,8 @@ requires:
 provides:
   IO::YAML:
     file: lib/IO/YAML.pm
-    version: 0.07
-generated_by: Module::Build version 0.25
+    version: 0.08
+generated_by: Module::Build version 0.2808
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.2.html
+  version: 1.2

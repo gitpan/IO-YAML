@@ -5,6 +5,11 @@
 # This file is in YAML format; see <URL:http://www.yaml.org/>
 # for more information
 
+- date: 2009-10-03
+  version: 0.08
+  changes:
+    - Added UNTIE() to prevent warnings (rt.cpan.org #50151) -- reported by J. J. Merelo Guervos
+
 - date: 2007-09-22
   version: 0.07
   changes:

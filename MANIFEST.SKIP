@@ -1,4 +1,7 @@
 \bCVS\b
+\b_build\b
+\bBuild$
+\b_darcs\b
 \.DS_Store$
 ~$
 ^#

@@ -11,7 +11,7 @@ use Symbol;
 
 use vars qw($VERSION $AUTOLOAD);
 
-$VERSION = '0.07';
+$VERSION = '0.08';
 
 sub new {
     my ($cls, @args) = @_;
@@ -245,6 +245,11 @@ sub eof {
     my ($self) = @_;
     my $fh = $self->handle || $self->open || die "Can't open: $!";
     return fh_eof($fh);
+}
+
+sub UNTIE {
+    my ($self, $count) = @_;
+    $self->close if $self->handle;
 }
 
 sub DESTROY {
@@ -814,7 +819,7 @@ Paul Hoffman (nkuitse AT cpan DOT org)
 
 =head1 COPYRIGHT
 
-Copyright 2004-2006 Paul M. Hoffman.
+Copyright 2004-2007, 2009 Paul M. Hoffman.
 
 This is free software, and is made available under the same terms as
 Perl itself.
